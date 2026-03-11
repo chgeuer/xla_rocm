@@ -1,0 +1,20 @@
+FROM nvidia/cuda:12.8.0-devel-ubuntu24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=en_US.UTF-8
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential clang git curl wget unzip \
+    libssl-dev automake autoconf libncurses5-dev \
+    ca-certificates locales python3 erlang elixir \
+    && rm -rf /var/lib/apt/lists/* \
+    && locale-gen en_US.UTF-8
+
+# Bazelisk
+RUN curl -fsSL -o /usr/local/bin/bazel \
+    https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-linux-amd64 \
+    && chmod +x /usr/local/bin/bazel
+
+RUN mix local.hex --force && mix local.rebar --force
+
+WORKDIR /build

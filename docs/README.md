@@ -44,7 +44,13 @@ Issues can arise at any layer. The patches are grouped by which layer they fix:
 | Doc | Issue | Upstream |
 |-----|-------|----------|
 | [05 — Infeed staging](05-infeed-staging.md) | SDMA engine faults on unpinned host memory in infeed path | XLA |
-| [06 — Kernel parameters](06-kernel-parameters.md) | APU-specific `amdgpu` driver settings for shared memory stability | Linux kernel / ROCm |
+| [06 — APU configuration](06-kernel-parameters.md) | BFC allocator + `amdgpu` driver settings for shared memory | EXLA / Linux kernel |
+
+### Build infrastructure
+
+| Doc | Topic |
+|-----|-------|
+| [07 — CUDA Docker build](07-cuda-docker-build.md) | Building the CUDA XLA archive in a container (for bleeding-edge host toolchains) |
 
 ## Which patches ship in the pre-built archive?
 
