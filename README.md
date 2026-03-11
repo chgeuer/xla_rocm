@@ -70,12 +70,39 @@ This downloads the archive, patches deps, and compiles EXLA against it.
 
 ### Option B: Manual setup
 
-1. Add EXLA to your `mix.exs` — **pin versions to match the pre-built archive**:
+1. Add EXLA to your `mix.exs` — **pin versions to match the pre-built archive**
+   and set the archive URL so rebuilds are automatic:
 
    ```elixir
-   {:nx, "~> 0.10.0"},
-   {:exla, "~> 0.10.0"}
+   defmodule MyApp.MixProject do
+     use Mix.Project
+
+     # Pre-built ROCm XLA archive — skips the hour-long Bazel build.
+     # Set XLA_BUILD=true to build from source instead.
+     @xla_rocm_release "https://github.com/chgeuer/xla_rocm/releases/download/v0.9.1-rocm"
+     @xla_rocm_archive "xla_extension-0.9.1-x86_64-linux-gnu-rocm.tar.gz"
+
+     unless System.get_env("XLA_BUILD") do
+       System.put_env("XLA_ARCHIVE_URL", System.get_env("XLA_ARCHIVE_URL") || "#{@xla_rocm_release}/#{@xla_rocm_archive}")
+       System.put_env("XLA_TARGET", System.get_env("XLA_TARGET") || "rocm")
+     end
+
+     System.put_env("CC", System.get_env("CC") || "clang")
+     System.put_env("CXX", System.get_env("CXX") || "clang++")
+
+     # ... rest of mix.exs ...
+
+     defp deps do
+       [
+         {:nx, "~> 0.10.0"},
+         {:exla, "~> 0.10.0"}
+       ]
+     end
+   end
    ```
+
+   This way `mix deps.get && mix deps.compile` just works — even after
+   wiping `deps/` and `_build/`. No env vars to remember, no justfile needed.
 
    > ⚠️ The pre-built archive is compiled against xla 0.9.1 / exla 0.10.0.
    > Using a newer exla (e.g. 0.11.0) will fail with `undefined symbol` errors
@@ -89,14 +116,13 @@ This downloads the archive, patches deps, and compiles EXLA against it.
    config :nx, :default_defn_options, compiler: EXLA, client: :rocm
    ```
 
-3. Compile with the pre-built archive:
+3. Compile:
 
    ```bash
-   export XLA_ARCHIVE_URL=https://github.com/chgeuer/xla_rocm/releases/download/v0.9.1-rocm/xla_extension-0.9.1-x86_64-linux-gnu-rocm.tar.gz
-   export XLA_TARGET=rocm
-   export CC=clang CXX=clang++
    mix deps.get && mix deps.compile
    ```
+
+   That's it — `mix.exs` handles the archive URL and compiler settings automatically.
 
 ### Building and publishing new archives
 
