@@ -164,7 +164,7 @@ The upstream XLA source (pinned by the `xla` hex package) needs 5 fixes for ROCm
 | Linker | `BUILD_FLAGS` | `--no-gc-sections` preserves the ROCm platform static initializer |
 | Build dep | `deps/xla/extension/BUILD` | Direct dep on `rocm:all_runtime` to preserve `alwayslink` |
 
-Full patch details with diffs are in [INSTALL.md](INSTALL.md).
+Full patch details with diffs are in [BUILD_FROM_SCRATCH.md](BUILD_FROM_SCRATCH.md).
 
 ## Usage
 
@@ -284,7 +284,7 @@ Or use `just cluster` to connect and show GPU info from both nodes.
 │   ├── package.sh          # Package built archives for distribution
 │   └── install_prebuilt.sh # Quick install for consumer projects (~1 min)
 ├── justfile                 # Task runner recipes
-├── INSTALL.md               # Detailed build instructions & patch diffs
+├── BUILD_FROM_SCRATCH.md    # Detailed build instructions & patch diffs
 └── mix.exs
 ```
 
