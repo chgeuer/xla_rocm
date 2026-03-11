@@ -304,6 +304,66 @@ else:
 PYEOF
 fi
 
+# 8e. Patch infeed_manager.cc: stage through pinned memory for infeed H2D copies
+#
+# XLA's eager BufferFromHostBuffer path stages host-to-device copies through
+# pinned (hipHostMalloc'd) memory, but the infeed path skips staging and DMAs
+# directly from unpinned host pages.  On gfx1150/gfx1151 APUs the SDMA engine
+# faults partway through unpinned buffers ("Page not present").  This patch
+# adds the same pinned-staging pattern used by the eager path.
+INFEED_CC="$XLA_DIR/xla/service/gpu/infeed_manager.cc"
+if grep -q 'HostMemoryAllocate' "$INFEED_CC" 2>/dev/null; then
+    ok "infeed_manager.cc already patched"
+else
+    python3 - "$INFEED_CC" << 'PYEOF'
+import sys
+f = sys.argv[1]
+with open(f) as fh:
+    content = fh.read()
+
+# Add cstring include for std::memcpy
+if '#include <cstring>' not in content:
+    content = content.replace('#include <cstdint>', '#include <cstdint>\n#include <cstring>')
+
+old = """  se::StreamExecutor* executor = stream->parent();
+  se::DeviceMemoryHandle buffer(executor,
+                                executor->AllocateArray<uint8_t>(size));
+  TF_RETURN_IF_ERROR(stream->Memcpy(buffer.memory_ptr(), source, size));
+
+  return std::move(buffer);"""
+
+new = """  se::StreamExecutor* executor = stream->parent();
+  se::DeviceMemoryHandle buffer(executor,
+                                executor->AllocateArray<uint8_t>(size));
+
+  // Stage through pinned host memory.  The eager BufferFromHostBuffer path
+  // already does this, but the infeed path was missing it.  On ROCm APUs
+  // (gfx1150/gfx1151) the SDMA engine faults when reading directly from
+  // non-pinned host pages ("Page not present").
+  auto pinned = executor->HostMemoryAllocate(size);
+  if (pinned.ok()) {
+    std::memcpy((*pinned)->opaque(), source, size);
+    TF_RETURN_IF_ERROR(
+        stream->Memcpy(buffer.memory_ptr(), (*pinned)->opaque(), size));
+    TF_RETURN_IF_ERROR(stream->BlockHostUntilDone());
+  } else {
+    // Fallback: direct copy (works on CUDA and discrete GPUs)
+    TF_RETURN_IF_ERROR(stream->Memcpy(buffer.memory_ptr(), source, size));
+  }
+
+  return std::move(buffer);"""
+
+if old in content:
+    content = content.replace(old, new)
+    with open(f, "w") as fh:
+        fh.write(content)
+    print("Patched infeed_manager.cc (pinned staging for H2D infeed copies)")
+else:
+    print("WARNING: Could not find expected code in infeed_manager.cc")
+    print("The file may have already been patched or the XLA version differs.")
+PYEOF
+fi
+
 # ---------------------------------------------------------------------------
 # 9. Build XLA + EXLA
 # ---------------------------------------------------------------------------

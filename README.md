@@ -154,7 +154,7 @@ just release v0.9.1-rocm  # publishes to GitHub releases
 
 ### XLA patches
 
-The upstream XLA source (pinned by the `xla` hex package) needs 5 fixes for ROCm 7.2:
+The upstream XLA source (pinned by the `xla` hex package) needs 6 fixes for ROCm 7.2:
 
 | Patch | File | Issue |
 |-------|------|-------|
@@ -163,6 +163,7 @@ The upstream XLA source (pinned by the `xla` hex package) needs 5 fixes for ROCm
 | rocprim API | `xla/stream_executor/rocm/cub_sort_kernel_rocm.cu.cc` | `rocprim::detail::float_bit_mask` removed in ROCm 7.2 |
 | Linker | `BUILD_FLAGS` | `--no-gc-sections` preserves the ROCm platform static initializer |
 | Build dep | `deps/xla/extension/BUILD` | Direct dep on `rocm:all_runtime` to preserve `alwayslink` |
+| Infeed staging | `xla/service/gpu/infeed_manager.cc` | Stage H2D infeed copies through pinned memory (fixes `lazy_transfers`) |
 
 Full patch details with diffs are in [BUILD_FROM_SCRATCH.md](BUILD_FROM_SCRATCH.md).
 
@@ -238,6 +239,26 @@ serving = Bumblebee.Text.generation(
   model_info, tokenizer, generation_config,
   defn_options: [compiler: EXLA, lazy_transfers: :always]
 )
+```
+
+> **APU note (gfx1150/gfx1151):** `lazy_transfers: :always` requires the
+> infeed staging patch (included in `setup_rocm.sh` since v0.9.2).
+> Without the patch, the SDMA engine faults reading from unpinned host
+> pages during the infeed H2D copy.
+>
+> **If you use the pre-built archive at v0.9.1-rocm:** that release does
+> not include this fix.  Either build from source via `setup_rocm.sh`, or
+> use the default `lazy_transfers: :opt_in` as a workaround.
+
+For kernel-level stability on APUs, set `amdgpu.noretry=0` in your boot
+parameters (allows the GPU to retry page faults instead of crashing):
+
+```bash
+# Runtime (until reboot)
+echo 0 | sudo tee /sys/module/amdgpu/parameters/noretry
+
+# Persistent — add to kernel cmdline:
+#   amdgpu.noretry=0
 ```
 
 ## Using both GPUs simultaneously
