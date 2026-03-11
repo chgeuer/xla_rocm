@@ -48,6 +48,27 @@ if [ -z "$XLA_VERSION" ]; then
     [ -n "$XLA_VERSION" ] || fail "Could not detect XLA version. Set XLA_ROCM_VERSION=0.9.1"
 fi
 
+# The pre-built archive was compiled against specific versions.
+# Warn if the consumer project uses incompatible versions.
+EXPECTED_XLA="0.9.1"
+EXPECTED_EXLA="0.10.0"
+if [ -f mix.lock ]; then
+    ACTUAL_XLA=$(grep -oP '"xla": {:hex, :xla, "\K[^"]+' mix.lock 2>/dev/null || echo "")
+    ACTUAL_EXLA=$(grep -oP '"exla": {:hex, :exla, "\K[^"]+' mix.lock 2>/dev/null || echo "")
+    if [ -n "$ACTUAL_XLA" ] && [ "$ACTUAL_XLA" != "$EXPECTED_XLA" ]; then
+        warn "mix.lock has xla $ACTUAL_XLA but the pre-built archive was compiled with xla $EXPECTED_XLA"
+        warn "This will likely cause 'undefined symbol' errors. Pin deps in mix.exs:"
+        warn '  {:nx, "~> 0.10.0"}, {:exla, "~> 0.10.0"}'
+        warn "Then run: mix deps.get"
+        fail "Version mismatch — fix mix.exs deps first"
+    fi
+    if [ -n "$ACTUAL_EXLA" ] && [ "$ACTUAL_EXLA" != "$EXPECTED_EXLA" ]; then
+        warn "mix.lock has exla $ACTUAL_EXLA but the pre-built archive expects exla $EXPECTED_EXLA"
+        warn "Pin deps in mix.exs: {:exla, \"~> 0.10.0\"}"
+        fail "Version mismatch — fix mix.exs deps first"
+    fi
+fi
+
 ARCHIVE_NAME="xla_extension-${XLA_VERSION}-${ARCH}-${OS}-${ABI}-${TARGET}.tar.gz"
 RELEASE_TAG="v${XLA_VERSION}-${TARGET}"
 

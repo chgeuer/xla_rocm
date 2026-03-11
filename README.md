@@ -70,12 +70,16 @@ This downloads the archive, patches deps, and compiles EXLA against it.
 
 ### Option B: Manual setup
 
-1. Add EXLA to your `mix.exs`:
+1. Add EXLA to your `mix.exs` — **pin versions to match the pre-built archive**:
 
    ```elixir
-   {:nx, "~> 0.9"},
-   {:exla, "~> 0.9"}
+   {:nx, "~> 0.10.0"},
+   {:exla, "~> 0.10.0"}
    ```
+
+   > ⚠️ The pre-built archive is compiled against xla 0.9.1 / exla 0.10.0.
+   > Using a newer exla (e.g. 0.11.0) will fail with `undefined symbol` errors
+   > because the C++ ABI changed between versions.
 
 2. Configure your `config/config.exs`:
 
