@@ -79,11 +79,11 @@ This downloads the archive, patches deps, and compiles EXLA against it.
 
      # Pre-built ROCm XLA archive — skips the hour-long Bazel build.
      # Set XLA_BUILD=true to build from source instead.
-     @xla_rocm_release "https://github.com/chgeuer/xla_rocm/releases/download/v0.9.1-rocm"
-     @xla_rocm_archive "xla_extension-0.9.1-x86_64-linux-gnu-rocm.tar.gz"
+     xla_rocm_archive_url =
+       "https://github.com/chgeuer/xla_rocm/releases/download/v0.9.1-rocm/xla_extension-0.9.1-x86_64-linux-gnu-rocm.tar.gz"
 
      unless System.get_env("XLA_BUILD") do
-       System.put_env("XLA_ARCHIVE_URL", System.get_env("XLA_ARCHIVE_URL") || "#{@xla_rocm_release}/#{@xla_rocm_archive}")
+       System.put_env("XLA_ARCHIVE_URL", System.get_env("XLA_ARCHIVE_URL") || xla_rocm_archive_url)
        System.put_env("XLA_TARGET", System.get_env("XLA_TARGET") || "rocm")
      end
 
