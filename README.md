@@ -1,8 +1,8 @@
 # xla_rocm
 
-Get [Nx](https://github.com/elixir-nx/nx), [EXLA](https://github.com/elixir-nx/nx/tree/main/exla), and [Bumblebee](https://github.com/elixir-nx/bumblebee) running on AMD GPUs via ROCm.
+Get [Nx](https://github.com/elixir-nx/nx), [EXLA](https://github.com/elixir-nx/nx/tree/main/exla), and [Bumblebee](https://github.com/elixir-nx/bumblebee) running on AMD GPUs via ROCm and NVIDIA GPUs via CUDA.
 
-Pre-compiled EXLA binaries don't support ROCm 7.2 or recent AMD GPU architectures (gfx1150, gfx1151). This project provides a setup script that patches the XLA source and builds from source, so you can run GPU-accelerated ML workloads on AMD hardware from Elixir.
+Pre-compiled EXLA binaries don't support ROCm 7.2, recent AMD GPU architectures (gfx1150, gfx1151), or Blackwell (sm_120). This project provides setup scripts that patch the XLA source and build from source, so you can run GPU-accelerated ML workloads on AMD and NVIDIA hardware from Elixir.
 
 ## Tested hardware
 
@@ -13,19 +13,32 @@ Pre-compiled EXLA binaries don't support ROCm 7.2 or recent AMD GPU architecture
 
 Both use unified memory (iGPU shares system RAM).
 
+NVIDIA GPUs with CUDA 12.8+ are also supported (e.g. RTX 5070, Blackwell sm_120).
+
 ## Prerequisites
 
-- **Arch Linux** with ROCm 7.2+ (`hsa-rocr`, `rocminfo` at minimum)
+- **Arch Linux**
 - **Elixir** 1.17+ / OTP 26+
 - **clang**, **make**, **gcc**
-- An AMD GPU visible to `rocminfo`
+- For ROCm: ROCm 7.2+ (`hsa-rocr`, `rocminfo` at minimum)
+- For CUDA: CUDA Toolkit 12.8+, cuDNN
 
 ## Quick start
+
+### AMD GPU (ROCm)
 
 ```bash
 git clone https://github.com/chgeuer/xla_rocm
 cd xla_rocm
 ./scripts/setup_rocm.sh    # installs packages, patches XLA, builds (~20-40 min)
+```
+
+### NVIDIA GPU (CUDA)
+
+```bash
+git clone https://github.com/chgeuer/xla_rocm
+cd xla_rocm
+./scripts/setup_cuda.sh    # installs packages, builds XLA for CUDA (~20-40 min)
 ```
 
 Then:
@@ -39,7 +52,60 @@ mix run -e 'IO.inspect(Nx.multiply(Nx.tensor([1,2,3]), Nx.tensor([4,5,6])))'
 just bert "The capital of France is [MASK]."
 ```
 
-## What the setup script does
+## Using pre-built binaries in other projects
+
+The full XLA build takes 20-40 minutes. Consumer projects can skip that entirely
+by using the pre-built archive from [GitHub releases](https://github.com/chgeuer/xla_rocm/releases).
+Only the small EXLA NIF wrapper needs to compile locally (~1 minute).
+
+### Option A: One-liner install
+
+From your project directory:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/chgeuer/xla_rocm/master/scripts/install_prebuilt.sh | bash
+```
+
+This downloads the archive, patches deps, and compiles EXLA against it.
+
+### Option B: Manual setup
+
+1. Add EXLA to your `mix.exs`:
+
+   ```elixir
+   {:nx, "~> 0.9"},
+   {:exla, "~> 0.9"}
+   ```
+
+2. Configure your `config/config.exs`:
+
+   ```elixir
+   config :nx, :default_backend, {EXLA.Backend, client: :rocm}
+   config :exla, :clients, rocm: [platform: :rocm, preallocate: false]
+   config :nx, :default_defn_options, compiler: EXLA, client: :rocm
+   ```
+
+3. Compile with the pre-built archive:
+
+   ```bash
+   export XLA_ARCHIVE_URL=https://github.com/chgeuer/xla_rocm/releases/download/v0.9.1-rocm/xla_extension-0.9.1-x86_64-linux-gnu-rocm.tar.gz
+   export XLA_TARGET=rocm
+   export CC=clang CXX=clang++
+   mix deps.get && mix deps.compile
+   ```
+
+### Building and publishing new archives
+
+If you've built XLA from source and want to publish updated archives:
+
+```bash
+just package rocm         # creates dist/ with archive + SHA256
+just release v0.9.1-rocm  # publishes to GitHub releases
+```
+
+## What the setup scripts do
+
+### ROCm (`setup_rocm.sh`)
 
 1. Installs ROCm packages (`hip-runtime-amd`, `rocblas`, `miopen-hip`, `hipcub`, …)
 2. Installs `bazelisk` (downloads the correct Bazel 7.4.1 for XLA)
@@ -47,6 +113,14 @@ just bert "The capital of France is [MASK]."
 4. Patches the XLA source (see below)
 5. Builds XLA from source with ROCm support
 6. Compiles the EXLA NIF with `clang++` (required for C++ ABI compatibility)
+
+### CUDA (`setup_cuda.sh`)
+
+1. Installs CUDA toolkit and cuDNN
+2. Installs `bazelisk` (downloads the correct Bazel 7.4.1 for XLA)
+3. Auto-detects GPU compute capability (e.g. sm_120 for Blackwell)
+4. Builds XLA from source with CUDA support
+5. Compiles the EXLA NIF with `clang++`
 
 ### XLA patches
 
@@ -67,14 +141,20 @@ Full patch details with diffs are in [INSTALL.md](INSTALL.md).
 ### justfile recipes
 
 ```
-just setup      # one-time build (~20-40 min)
-just test       # smoke test — verify GPU works
-just info       # show platforms & config
-just iex        # interactive Elixir shell
-just bert       # BERT fill-mask (default prompt)
-just bert "I love [MASK] music."  # custom prompt
-just test-cpu   # run on CPU instead
-just rocm-info  # system GPU info
+just setup-rocm   # one-time ROCm build (~20-40 min)
+just setup-cuda   # one-time CUDA build (~20-40 min)
+just test-rocm    # smoke test — verify AMD GPU works
+just test-cuda    # smoke test — verify NVIDIA GPU works
+just info         # show platforms & config
+just iex          # interactive Elixir shell
+just bert         # BERT fill-mask on default GPU
+just bert-cuda    # BERT fill-mask on NVIDIA GPU
+just test-cpu     # run on CPU instead
+just rocm-info    # AMD GPU system info
+just cuda-info    # NVIDIA GPU system info
+just start-rocm   # start named ROCm node (for clustering)
+just start-cuda   # start named CUDA node (for clustering)
+just cluster      # connect both GPU nodes & show info
 ```
 
 ### GPU target selection
@@ -130,6 +210,34 @@ serving = Bumblebee.Text.generation(
 )
 ```
 
+## Using both GPUs simultaneously
+
+CUDA and ROCm EXLA cannot coexist in the same BEAM process (C++ linker collisions). Use distributed Erlang with short names to run each GPU in its own node:
+
+```bash
+# Terminal 1 — start ROCm node
+just start-rocm
+# or: GPU_TARGET=rocm elixir --sname rocm -S mix run --no-halt
+
+# Terminal 2 — start CUDA node
+just start-cuda
+# or: GPU_TARGET=cuda elixir --sname cuda -S mix run --no-halt
+
+# Terminal 3 — connect from a client
+elixir --sname client -S mix run -e '
+  XlaRocm.Cluster.connect(:rocm)
+  XlaRocm.Cluster.connect(:cuda)
+  IO.inspect(XlaRocm.Cluster.gpu_info(), pretty: true)
+
+  # Run work on a specific GPU
+  XlaRocm.Cluster.run_on(:cuda, fn ->
+    Nx.multiply(Nx.tensor([1, 2, 3]), Nx.tensor([4, 5, 6]))
+  end)
+'
+```
+
+Or use `just cluster` to connect and show GPU info from both nodes.
+
 ## Project structure
 
 ```
@@ -137,9 +245,14 @@ serving = Bumblebee.Text.generation(
 │   ├── config.exs          # EXLA client config (ROCm, preallocate: false)
 │   └── runtime.exs         # GPU_TARGET env var switching
 ├── lib/
-│   └── xla_rocm.ex         # XlaRocm.info/0, XlaRocm.smoke_test/0
+│   ├── xla_rocm.ex         # XlaRocm.info/0, XlaRocm.smoke_test/0
+│   └── xla_rocm/
+│       └── cluster.ex      # Distributed Erlang clustering for dual-GPU
 ├── scripts/
-│   └── setup_rocm.sh       # Automated setup: packages, patches, build
+│   ├── setup_rocm.sh       # Automated ROCm setup: packages, patches, build
+│   ├── setup_cuda.sh       # Automated CUDA setup: packages, build
+│   ├── package.sh          # Package built archives for distribution
+│   └── install_prebuilt.sh # Quick install for consumer projects (~1 min)
 ├── justfile                 # Task runner recipes
 ├── INSTALL.md               # Detailed build instructions & patch diffs
 └── mix.exs
@@ -150,4 +263,6 @@ serving = Bumblebee.Text.generation(
 - [elixir-nx/xla](https://github.com/elixir-nx/xla) — Pre-compiled XLA extension for Elixir
 - [Increasing VRAM on AMD AI APUs](https://www.jeffgeerling.com/blog/2025/increasing-vram-allocation-on-amd-ai-apus-under-linux/) — Jeff Geerling
 - [ROCm documentation](https://rocm.docs.amd.com/)
+- [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit) — NVIDIA CUDA
 - [Bumblebee](https://github.com/elixir-nx/bumblebee) — Transformer models for Elixir
+- [Distributed Erlang](https://www.erlang.org/doc/system/distributed.html) — Erlang distribution protocol

@@ -57,7 +57,9 @@ defmodule XlaRocm do
     %{
       platforms: platforms,
       rocm_available: Map.has_key?(platforms, :rocm),
-      gpu_devices: Map.get(platforms, :rocm, 0),
+      cuda_available: Map.has_key?(platforms, :cuda),
+      rocm_devices: Map.get(platforms, :rocm, 0),
+      cuda_devices: Map.get(platforms, :cuda, 0),
       cpu_devices: Map.get(platforms, :host, 0),
       nx_backend: Application.get_env(:nx, :default_backend),
       exla_clients: Application.get_env(:exla, :clients)
@@ -67,21 +69,34 @@ defmodule XlaRocm do
   @doc """
   Runs a quick smoke test to verify GPU compute works.
 
+  Checks that the configured GPU target is actually available and
+  reports which device the computation ran on.
+
   ## Examples
 
       XlaRocm.smoke_test()
 
   """
   def smoke_test do
-    IO.puts("Platforms: #{inspect(EXLA.NIF.get_supported_platforms())}")
+    platforms = EXLA.NIF.get_supported_platforms()
+    IO.puts("Platforms: #{inspect(platforms)}")
+
+    {_backend_mod, backend_opts} = Application.get_env(:nx, :default_backend)
+    target = Keyword.get(backend_opts, :client, :host)
+    IO.puts("Configured target: #{target}")
+
+    unless target == :host or Map.has_key?(platforms, target) do
+      IO.puts("❌ Platform :#{target} not available! EXLA was built for: #{platforms |> Map.keys() |> Enum.reject(&(&1 == :host)) |> inspect()}")
+      IO.puts("   Set GPU_TARGET=rocm or GPU_TARGET=host, or rebuild EXLA with XLA_TARGET=#{target}")
+      System.halt(1)
+    end
 
     t = Nx.tensor([1.0, 2.0, 3.0, 4.0, 5.0])
     result = Nx.multiply(t, t)
     IO.puts("t² = #{inspect(Nx.to_list(result))}")
+    IO.puts("Device: #{inspect(result)}" |> String.split("\n") |> Enum.find(& &1 =~ "Backend"))
 
-    backend = result.__struct__
-    IO.puts("Backend: #{inspect(backend)}")
-    IO.puts("✅ Working!")
+    IO.puts("✅ Working on :#{target}!")
     :ok
   end
 end

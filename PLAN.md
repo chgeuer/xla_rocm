@@ -6,13 +6,20 @@ Pre-compiled EXLA binaries don't support these GPUs yet. You need to build XLA f
 
 Standard binaries max out at sm_90. You need CUDA 12.8+ to target sm_120.
 
+**Automated setup:**
+
+```bash
+./scripts/setup_cuda.sh    # installs packages, auto-detects sm_120, builds
+```
+
 **Prerequisites:** CUDA Toolkit 12.8, cuDNN 9.7+, Clang 18, Bazel 7.
 
-**Environment variables:**
+**Environment variables (if building manually):**
 
 ```bash
 export XLA_BUILD=true
 export XLA_TARGET=cuda
+export TF_CUDA_COMPUTE_CAPABILITIES=12.0
 export ELIXIR_ERL_OPTIONS="+sssdio 128"  # prevent CUDA compiler from crashing the BEAM
 ```
 
@@ -73,12 +80,19 @@ serving = Bumblebee.Text.generation(
 
 ## 4. Using both GPUs simultaneously
 
-CUDA and ROCm EXLA can't coexist in the same BEAM process (C++ linker collisions). Use distributed Erlang:
+CUDA and ROCm EXLA can't coexist in the same BEAM process (C++ linker collisions). Use distributed Erlang with `--sname`:
 
-1. Run a Docker container with CUDA for the RTX 5070
-2. Run a separate Docker container with ROCm for the 890M
-3. Connect via `Node.connect/1`
-4. Route requests with `Nx.Serving.distributed/1`
+1. Start a ROCm node: `just start-rocm` (or `GPU_TARGET=rocm elixir --sname rocm -S mix run --no-halt`)
+2. Start a CUDA node: `just start-cuda` (or `GPU_TARGET=cuda elixir --sname cuda -S mix run --no-halt`)
+3. Connect from a client: `just cluster`
+4. Dispatch work with `XlaRocm.Cluster.run_on(:cuda, fn -> ... end)`
+
+```elixir
+# From any connected node:
+XlaRocm.Cluster.connect(:rocm)
+XlaRocm.Cluster.connect(:cuda)
+XlaRocm.Cluster.gpu_info()  # shows GPU status on all nodes
+```
 
 ## References
 

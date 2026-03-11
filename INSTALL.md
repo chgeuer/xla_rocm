@@ -212,22 +212,42 @@ cat /sys/module/ttm/parameters/pages_limit
 
 ## Phase 5: NVIDIA RTX 5070 Setup (After ROCm Works)
 
-### 5.1 — Install CUDA Toolkit and cuDNN
+### 5.1 — Automated Setup
+
+The fastest path is the setup script, which mirrors the ROCm setup:
+
+```bash
+./scripts/setup_cuda.sh
+```
+
+This script:
+1. Checks for CUDA toolkit and cuDNN
+2. Auto-detects GPU compute capability (e.g. sm_120 for Blackwell)
+3. Sets `TF_CUDA_COMPUTE_CAPABILITIES` accordingly
+4. Builds XLA from source with `XLA_TARGET=cuda`
+5. Verifies CUDA platform detection
+
+### 5.2 — Manual Setup
+
+Install CUDA Toolkit and cuDNN:
 
 ```bash
 sudo pacman -S --noconfirm cuda cudnn
 ```
 
-### 5.2 — Rebuild EXLA for CUDA
+### 5.3 — Rebuild EXLA for CUDA
 
 ```bash
 export XLA_BUILD=true
 export XLA_TARGET=cuda
+export TF_CUDA_COMPUTE_CAPABILITIES=12.0  # for Blackwell sm_120
 export ELIXIR_ERL_OPTIONS="+sssdio 128"
+export CC=clang
+export CXX=clang++
 mix deps.compile exla --force
 ```
 
-### 5.3 — Update Config
+### 5.4 — Update Config
 
 Add CUDA client alongside ROCm in `config/config.exs`:
 
@@ -238,7 +258,43 @@ config :exla, :clients,
 ```
 
 **⚠️ Important:** You cannot run CUDA and ROCm EXLA in the same BEAM process
-(C++ linker collisions). For dual-GPU, use distributed Erlang clustering — see README.md §4.
+(C++ linker collisions). For dual-GPU, use distributed Erlang clustering — see below.
+
+## Phase 6: Dual-GPU Clustering (Both GPUs Simultaneously)
+
+CUDA and ROCm EXLA link different C++ runtimes and cannot coexist in one process.
+Use distributed Erlang with `--sname` to run each GPU in its own BEAM node:
+
+```bash
+# Terminal 1: ROCm node
+GPU_TARGET=rocm elixir --sname rocm -S mix run --no-halt
+
+# Terminal 2: CUDA node
+GPU_TARGET=cuda elixir --sname cuda -S mix run --no-halt
+
+# Terminal 3: Client that connects to both
+elixir --sname client -S mix run -e '
+  XlaRocm.Cluster.connect(:rocm)
+  XlaRocm.Cluster.connect(:cuda)
+  IO.inspect(XlaRocm.Cluster.gpu_info(), pretty: true)
+'
+```
+
+Or use the justfile recipes: `just start-rocm`, `just start-cuda`, `just cluster`.
+
+### Dispatching work to a specific GPU
+
+```elixir
+# Run on NVIDIA GPU
+XlaRocm.Cluster.run_on(:cuda, fn ->
+  Nx.multiply(Nx.tensor([1, 2, 3]), Nx.tensor([4, 5, 6]))
+end)
+
+# Run on AMD GPU
+XlaRocm.Cluster.run_on(:rocm, fn ->
+  Nx.multiply(Nx.tensor([1, 2, 3]), Nx.tensor([4, 5, 6]))
+end)
+```
 
 ## Current Status
 
