@@ -220,7 +220,25 @@ Nx.Serving.run(serving, "The capital of [MASK] is Paris.")
 
 ## Memory configuration
 
-AMD APUs with unified memory need `preallocate: false` to prevent EXLA from grabbing 90% of system RAM on startup. This is already configured in `config/config.exs`.
+### BFC allocator: `preallocate: false`
+
+EXLA's BFC (Best-Fit with Coalescing) allocator grabs GPU memory at startup. With the default `preallocate: true`, it claims **90%** of reported GPU memory upfront. On discrete GPUs with dedicated VRAM this is fast and harmless — the memory is reserved for the GPU anyway.
+
+On APUs (Radeon 890M, 8060S), **GPU memory is system RAM**. Pre-allocating 90% of a 96 GB machine would grab ~86 GB and freeze the OS. Setting `preallocate: false` makes the allocator claim memory on demand within its ceiling (~42 GB) instead of upfront.
+
+```elixir
+# config/runtime.exs
+config :exla, :clients,
+  rocm: [platform: :rocm, preallocate: false]
+
+# For discrete NVIDIA GPUs, upfront allocation is fine:
+config :exla, :clients,
+  cuda: [platform: :cuda, preallocate: true, memory_fraction: 0.8]
+```
+
+This is an EXLA configuration choice, not a bug fix — it applies to any APU with shared memory regardless of the XLA patches.
+
+### TTM pages limit
 
 For large models (70B+), increase the kernel TTM limit to allow the GPU to address more system RAM:
 

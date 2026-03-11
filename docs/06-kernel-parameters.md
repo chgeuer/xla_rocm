@@ -1,12 +1,30 @@
-# APU Kernel Parameters
+# APU Configuration
 
 | | |
 |---|---|
-| **Upstream project** | [Linux kernel](https://kernel.org) (`amdgpu` driver), [ROCm](https://github.com/ROCm) |
-| **Category** | System configuration — not a code patch, but required for stable operation |
+| **Upstream project** | [Linux kernel](https://kernel.org) (`amdgpu` driver), [ROCm](https://github.com/ROCm), [EXLA](https://github.com/elixir-nx/nx) |
+| **Category** | System and application configuration — not code patches, but required for stable operation on APUs |
 | **Affects** | AMD APUs with shared memory (Radeon 890M, 8060S, etc.) |
 
-## Parameters
+## EXLA BFC allocator: `preallocate: false`
+
+EXLA's BFC (Best-Fit with Coalescing) allocator grabs GPU memory at startup. With the default `preallocate: true`, it claims **90%** of reported GPU memory upfront. On discrete GPUs with dedicated VRAM, this is fast and harmless.
+
+On APUs, **GPU memory is system RAM**. Pre-allocating 90% of a 96 GB machine would grab ~86 GB and freeze the OS.
+
+```elixir
+# For APUs — allocate on demand within the BFC ceiling
+config :exla, :clients,
+  rocm: [platform: :rocm, preallocate: false]
+
+# For discrete GPUs — upfront allocation is fine
+config :exla, :clients,
+  cuda: [platform: :cuda, preallocate: true, memory_fraction: 0.8]
+```
+
+This is an EXLA configuration choice for any APU with shared memory. It is unrelated to the XLA infeed staging fix ([05-infeed-staging.md](05-infeed-staging.md)).
+
+## Kernel parameters
 
 ### `amdgpu.noretry=0`
 
